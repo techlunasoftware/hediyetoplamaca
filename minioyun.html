@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Noel Baba'nın Hediye Atışı</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #141E30, #243B55); /* Gece gökyüzü */
+            font-family: 'Fredoka', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* İmleç burada varsayılan olarak görünür olsun */
+            cursor: default; 
+        }
+
+        /* Kar Yağışı Efekti (CSS) */
+        .snowflake {
+            position: absolute;
+            top: -10px;
+            color: #fff;
+            font-size: 1em;
+            font-family: Arial;
+            text-shadow: 0 0 1px #000;
+            animation: fall linear infinite;
+            z-index: 0;
+        }
+
+        @keyframes fall {
+            to { transform: translateY(100vh); }
+        }
+
+        #game-container {
+            position: relative;
+            width: 900px;
+            height: 600px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            border: 2px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(4px);
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            overflow: hidden;
+            z-index: 1;
+            /* Varsayılan olarak imleç görünsün */
+            cursor: default; 
+        }
+
+        /* Sadece oyun oynanırken (playing sınıfı eklendiğinde) imleci gizle */
+        #game-container.playing {
+            cursor: none;
+        }
+
+        canvas { display: block; }
+
+        /* Arayüz */
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            font-size: 24px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            pointer-events: none;
+            display: flex;
+            gap: 20px;
+        }
+
+        .badge {
+            background: rgba(231, 76, 60, 0.8);
+            padding: 10px 20px;
+            border-radius: 30px;
+            border: 2px solid #fff;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Başlangıç ve Bitiş Ekranları */
+        .screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 10;
+            text-align: center;
+        }
+
+        h1 { font-size: 60px; color: #ffce00; margin-bottom: 10px; text-shadow: 0 0 20px #e74c3c; }
+        p { font-size: 22px; color: #bdc3c7; max-width: 600px; margin-bottom: 30px; }
+
+        button {
+            padding: 15px 50px;
+            font-size: 28px;
+            font-family: 'Fredoka', sans-serif;
+            border: none;
+            border-radius: 50px;
+            background: #27ae60;
+            color: white;
+            cursor: pointer;
+            box-shadow: 0 10px #1e8449;
+            transition: transform 0.1s;
+        }
+        button:hover { background: #2ecc71; }
+        button:active { transform: translateY(5px); box-shadow: 0 5px #1e8449; }
+        
+        #game-over { display: none; }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="900" height="600"></canvas>
+        
+        <div id="ui">
+            <div class="badge">🎁 <span id="score">0</span></div>
+            <div class="badge">⏳ <span id="timer">60</span></div>
+        </div>
+
+        <div id="start-screen" class="screen">
+            <h1>Ho-Ho-Ho! 🎅</h1>
+            <p>Noel Baba köşeye geçti ve hediyeleri fırlatmaya başladı!<br>Fareni kullanarak kızağınla hepsini havada yakala.</p>
+            <button onclick="startGame()">BAŞLA</button>
+        </div>
+
+        <div id="game-over" class="screen">
+            <h1>Süre Doldu! 🎄</h1>
+            <p>Topladığın Puan: <span id="final-score" style="color:#ffce00; font-weight:bold; font-size:30px;">0</span></p>
+            <button onclick="startGame()">TEKRAR OYNA</button>
+        </div>
+    </div>
+
+    <script>
+        // --- KAR EFEKTİ OLUŞTURUCU ---
+        function createSnow() {
+            const container = document.body;
+            for(let i=0; i<50; i++){
+                const flake = document.createElement('div');
+                flake.classList.add('snowflake');
+                flake.innerHTML = '❄';
+                flake.style.left = Math.random() * 100 + 'vw';
+                flake.style.animationDuration = Math.random() * 3 + 2 + 's';
+                flake.style.opacity = Math.random();
+                flake.style.fontSize = Math.random() * 10 + 10 + 'px';
+                container.appendChild(flake);
+            }
+        }
+        createSnow();
+
+        // --- OYUN MOTORU ---
+        const gameContainer = document.getElementById('game-container');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const timerEl = document.getElementById('timer');
+        const endScreen = document.getElementById('game-over');
+        const startScreen = document.getElementById('start-screen');
+        
+        let gameRunning = false;
+        let score = 0;
+        let timeLeft = 60;
+        let timerInterval;
+        let objects = []; 
+        let particles = []; 
+
+        const santa = {
+            x: canvas.width - 120,
+            y: 60,
+            size: 100
+        };
+
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height - 100,
+            width: 100,
+            height: 60
+        };
+
+        // Fare Kontrolü
+        canvas.addEventListener('mousemove', (e) => {
+            if(!gameRunning) return;
+            const rect = canvas.getBoundingClientRect();
+            let mx = e.clientX - rect.left;
+            player.x = mx - player.width/2;
+            
+            if(player.x < 0) player.x = 0;
+            if(player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+        });
+
+        function startGame() {
+            score = 0;
+            timeLeft = 60;
+            objects = [];
+            particles = [];
+            gameRunning = true;
+            scoreEl.innerText = score;
+            timerEl.innerText = timeLeft;
+            
+            // İmleci gizle (Oyun modu)
+            gameContainer.classList.add('playing');
+            
+            startScreen.style.display = 'none';
+            endScreen.style.display = 'none';
+            
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerEl.innerText = timeLeft;
+                if(timeLeft <= 0) gameOver();
+            }, 1000);
+
+            spawnLoop();
+            requestAnimationFrame(loop);
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            clearInterval(timerInterval);
+            document.getElementById('final-score').innerText = score;
+            
+            // İmleci göster (Menü modu)
+            gameContainer.classList.remove('playing');
+            
+            endScreen.style.display = 'flex';
+        }
+
+        function throwObject() {
+            if(!gameRunning) return;
+            
+            const isGift = Math.random() > 0.2; 
+            const type = isGift ? 'gift' : 'coal';
+            const style = isGift ? Math.floor(Math.random() * 3) : 0; 
+            
+            const velocityX = -(Math.random() * 5 + 3); 
+            const velocityY = -(Math.random() * 5); 
+
+            objects.push({
+                x: santa.x,
+                y: santa.y + 50,
+                vx: velocityX,
+                vy: velocityY,
+                width: 40,
+                height: 40,
+                type: type,
+                style: style,
+                rotation: 0,
+                rotSpeed: (Math.random() - 0.5) * 0.2
+            });
+        }
+
+        function spawnLoop() {
+            if(!gameRunning) return;
+            throwObject();
+            let nextThrow = Math.random() * 800 + 400; 
+            setTimeout(spawnLoop, nextThrow);
+        }
+
+        // --- ÇİZİM ---
+
+        function drawSanta() {
+            ctx.save();
+            ctx.translate(santa.x, santa.y);
+            ctx.rotate(-0.3); 
+            ctx.font = "100px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText("🎅", 0, 0);
+            
+            ctx.fillStyle = "rgba(255,255,255,0.2)";
+            ctx.beginPath();
+            ctx.arc(0, 50, 20, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function drawPlayer() {
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            
+            // 1. Kızak Demirleri (Runner) - Gümüş/Gri
+            ctx.strokeStyle = "#ecf0f1";
+            ctx.lineWidth = 5;
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.moveTo(0, 55);
+            ctx.quadraticCurveTo(20, 60, 100, 55);
+            ctx.quadraticCurveTo(120, 40, 95, 45); 
+            ctx.stroke();
+            
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(20, 55); ctx.lineTo(20, 35);
+            ctx.moveTo(80, 55); ctx.lineTo(80, 35);
+            ctx.stroke();
+
+            // 2. Kızak Gövdesi (Ana Kırmızı)
+            ctx.fillStyle = "#d63031"; // Parlak Noel Kırmızısı
+            ctx.beginPath();
+            ctx.moveTo(5, 10);
+            ctx.lineTo(85, 10); 
+            ctx.quadraticCurveTo(105, 10, 100, 35); 
+            ctx.lineTo(95, 45);
+            ctx.lineTo(15, 45); 
+            ctx.quadraticCurveTo(-5, 45, 5, 10); 
+            ctx.fill();
+            
+            // 3. Altın Detaylar (Trim)
+            ctx.strokeStyle = "#f1c40f"; 
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(10, 20);
+            ctx.lineTo(90, 20);
+            ctx.stroke();
+            
+            // 4. İç Döşeme (Koyu Kırmızı Koltuk)
+            ctx.fillStyle = "#b71c1c";
+            ctx.beginPath();
+            ctx.roundRect(15, 5, 60, 10, 5);
+            ctx.fill();
+
+            // 5. İçindeki Toplanan Hediye
+            ctx.font = "30px Arial";
+            ctx.fillText("🎁", 25, 5);
+
+            ctx.restore();
+        }
+
+        function drawGift(obj) {
+            ctx.save();
+            ctx.translate(obj.x + obj.width/2, obj.y + obj.height/2);
+            ctx.rotate(obj.rotation);
+            
+            let baseColor, ribbonColor;
+
+            if (obj.style === 0) { // Klasik Kırmızı
+                baseColor = '#c0392b'; ribbonColor = '#f1c40f';
+            } else if (obj.style === 1) { // Çam Yeşili
+                baseColor = '#27ae60'; ribbonColor = '#c0392b';
+            } else { // Kış Beyazı
+                baseColor = '#ecf0f1'; ribbonColor = '#e74c3c';
+            }
+
+            ctx.fillStyle = baseColor;
+            ctx.fillRect(-20, -20, 40, 40);
+            
+            ctx.fillStyle = ribbonColor;
+            ctx.fillRect(-5, -20, 10, 40);
+            ctx.fillRect(-20, -5, 40, 10);
+            
+            ctx.beginPath();
+            ctx.arc(0, -20, 8, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.fillStyle = "rgba(255,255,255,0.3)";
+            ctx.fillRect(-15, -15, 10, 10);
+
+            ctx.restore();
+        }
+
+        function drawCoal(obj) {
+            ctx.save();
+            ctx.translate(obj.x + obj.width/2, obj.y + obj.height/2);
+            ctx.rotate(obj.rotation);
+            
+            ctx.fillStyle = "#2c3e50";
+            ctx.beginPath();
+            ctx.arc(0, 0, 18, 0, Math.PI*2);
+            ctx.fill();
+            
+            ctx.fillStyle = "#1a252f";
+            ctx.beginPath();
+            ctx.arc(-5, -5, 5, 0, Math.PI*2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function createParticles(x, y, color) {
+            for(let i=0; i<10; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 5,
+                    vy: (Math.random() - 0.5) * 5,
+                    life: 1.0,
+                    color: color
+                });
+            }
+        }
+
+        function drawParticles() {
+            particles.forEach((p, index) => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.life -= 0.05;
+
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+
+                if(p.life <= 0) particles.splice(index, 1);
+            });
+        }
+
+        // --- ANA DÖNGÜ ---
+        function loop() {
+            if(!gameRunning) return;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawSanta();
+            drawPlayer();
+            drawParticles();
+
+            const gravity = 0.15; 
+
+            objects.forEach((obj, index) => {
+                obj.vy += gravity; 
+                obj.x += obj.vx;
+                obj.y += obj.vy;
+                obj.rotation += obj.rotSpeed;
+
+                if(obj.type === 'gift') drawGift(obj);
+                else drawCoal(obj);
+
+                const distX = Math.abs((obj.x + obj.width/2) - (player.x + player.width/2));
+                const distY = Math.abs((obj.y + obj.height/2) - (player.y + player.height/2));
+
+                if (distX < 50 && distY < 40) {
+                    if(obj.type === 'gift') {
+                        score += 10;
+                        createParticles(obj.x, obj.y, '#f1c40f'); 
+                    } else {
+                        score -= 20;
+                        createParticles(obj.x, obj.y, '#7f8c8d');
+                        document.getElementById('game-container').style.transform = "translate(5px, 0)";
+                        setTimeout(() => document.getElementById('game-container').style.transform = "translate(0, 0)", 100);
+                    }
+                    scoreEl.innerText = score;
+                    objects.splice(index, 1);
+                }
+
+                if(obj.y > canvas.height) {
+                    objects.splice(index, 1);
+                }
+            });
+
+            requestAnimationFrame(loop);
+        }
+
+    </script>
+</body>
+</html>
